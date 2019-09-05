@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.alvaro.mapper.EstatisticaMapper">
+
+	<resultMap type="Categoria" id="ResultadoVendasCategoriaResult">
+		<id property="id" column="IDCATEGORIA"/>
+		<id property="data" column="DTDATAAGRUPADA"/>
+		<id property="nome" column="NMCATEGORIA"/>
+		<result property="cor" column="DSCOR"/>
+		<collection property="series" resultMap="ResultadoVendasSerieResult"/>
+	</resultMap>
+	
+		<resultMap type="Serie" id="ResultadoVendasSerieResult">
+			<result property="data" column="DTDATA"/>
+			<result property="id" column="IDSERIE"/>
+			<result property="nome" column="NMSERIE"/>
+			<result property="valor" column="VLBRUTO"/>
+			<result property="parcelamentoMedio" column="MEDIAPARCELAS"/>
+			<result property="comissao" column="VLCOMISSAO"/>
+			<result property="liquido" column="VLLIQUIDO"/>
+			<result property="quantidade" column="NRTRANSACOES"/>
+			<result property="taxa" column="TXDESCONTO"/>
+			<result property="feriado" column="ISFERIADO"/>
+			<result property="ticketMedio" column="TICKETMEDIO"/>
+			<result property="banco" column="DSBANCO"/>
+			<result property="agencia" column="NRAGENCIA"/>
+			<result property="conta" column="NRCONTA"/>
+	</resultMap>
+
+	<select id="pesquisarEstatistica" parameterType="Map" resultMap="ResultadoVendasCategoriaResult">
+
+		WITH E AS
+		(SELECT
+			<choose>
+				<when test="agrupamento == 0 and agrupamentoMensal == 0">
+				</when>
+				<when test="agrupamento == 1">
+					E.DTOCORRENCIA,
+					E.IDADQUIRENTE AS IDCATEGORIA,
+					A.NMADQUIRENTE AS NMCATEGORIA,
+					A.COR AS DSCOR,
+				</when>
+				<when test="agrupamento == 2">
+					E.DTOCORRENCIA,
+					E.IDBANDEIRA AS IDCATEGORIA,
+					B.NMBANDEIRA AS NMCATEGORIA,
+					B.COR AS DSCOR,
+				</when>
+				<when test="agrupamento == 3">
+					E.DTOCORRENCIA,
+					E.IDPRODUTO AS IDCATEGORIA,
+					P.NMPRODUTO AS NMCATEGORIA,
+					P.DSCOR,
+				</when>
+				<when test="agrupamento == 4">
+					E.DTOCORRENCIA,
+					PTC.IDPRODUTOTIPOCLASSIFICACAO AS IDCATEGORIA,
+					PTC.DSPRODUTOTIPOCLASSIFICACAO AS NMCATEGORIA,
+					PTC.DSCOR,
+				</when>
+				<when test="agrupamento == 0 and agrupamentoMensal == 1">
+					E.DTOCORRENCIA,
+					NULL AS DSCOR,
+					NULL AS NMCATEGORIA,
+					NULL AS IDCATEGORIA,
+				</when>
+			</choose>
+			round(avg(E.MEDIAPARCELAS)) AS MEDIAPARCELAS,
+			SUM(E.VLCOMISSAO) AS VLCOMISSAO,
+			SUM(E.VLLIQUIDO) AS VLLIQUIDO,
+			SUM(E.NRQUANTIDADE) AS NRTRANSACOES,
+			SUM(E.VLBRUTO) AS VLBRUTO,
+			AVG(E.TXDESCONTO) AS TXDESCONTO,
+			SUM(E.VLLIQUIDO)/SUM(E.NRQUANTIDADE) AS TICKETMEDIO
+		FROM CRCESTATISTICA E
+			<choose>
+				<when test="agrupamento == 0">
+				</when>
+				<when test="agrupamento == 1">
+					INNER JOIN CRCADQUIRENTE A ON E.IDADQUIRENTE = A.IDADQUIRENTE
+				</when>
+				<when test="agrupamento == 2">
+					INNER JOIN CRCBANDEIRA B ON E.IDBANDEIRA = B.IDBANDEIRA
+				</when>
+				<when test="agrupamento == 3">
+					INNER JOIN CRCPRODUTO P ON E.IDPRODUTO = P.IDPRODUTO
+				</when>
+				<when test="agrupamento == 4">
+					INNER JOIN CRCPRODUTO P ON E.IDPRODUTO = P.IDPRODUTO
+					INNER JOIN CRCPRODUTOTIPO PT ON PT.IDPRODUTOTIPO = P.IDPRODUTOTIPO
+					INNER JOIN CRCPRODUTOTIPOCLASSIFICACAO PTC ON PTC.IDPRODUTOTIPOCLASSIFICACAO = PT.IDPRODUTOTIPOCLASSIFICACAO
+				</when>
+			</choose>
+			<if test="acessaTodosEstabelecimentos == 1">
+				INNER JOIN CRCPERFILACESSO PA ON PA.IDPERFILACESSO = #{idPerfilAcesso}
+				LEFT JOIN CRCPERFILACESSOESTAB PE ON PA.IDPERFILACESSO = PE.IDPERFILACESSO AND E.IDESTABELECIMENTO = PE.IDESTABELECIMENTO
+			</if>
+			<if test="gerarPdfComUmaAdquirente">
+				INNER JOIN CRCADQSTATUSCREDENCIAMENTO STCRE ON STCRE.IDCLIENTE = E.IDCLIENTE AND STCRE.IDADQUIRENTE = E.IDADQUIRENTE
+			</if>
+		WHERE
+			E.IDCLIENTE = #{idCliente}
+			AND E.DTOCORRENCIA BETWEEN #{dataInicial} AND #{dataFinal}
+			AND E.FLTIPOESTATISTICA = #{tpEstatistica}
+			<if test="acessaTodosEstabelecimentos == 1">
+				AND (PA.FLVISIBILIDADEESTAB = 0 OR PE.IDESTABELECIMENTO IS NOT NULL)
+			</if>
+			<if test="filtroAdquirente != 0">
+				AND E.IDADQUIRENTE = #{filtroAdquirente}
+			</if>
+            <if test="idEstabelecimento != 0">
+                AND E.IDESTABELECIMENTO = #{idEstabelecimento}
+            </if>
+			<if test="gerarPdfComUmaAdquirente">
+				AND STCRE.FLSITUACAO = 'H'
+			</if>
+		<choose>
+			<when test="agrupamento == 0 and agrupamentoMensal == 0">
+			</when>
+			<when test="agrupamento == 1">
+				GROUP BY
+					E.DTOCORRENCIA,
+					E.IDADQUIRENTE,
+					A.NMADQUIRENTE,
+					A.COR
+			</when>
+			<when test="agrupamento == 2">
+				GROUP BY
+					E.DTOCORRENCIA,
+					E.IDBANDEIRA,
+					B.NMBANDEIRA,
+					B.COR
+			</when>
+			<when test="agrupamento == 3">
+				GROUP BY
+					E.DTOCORRENCIA,
+					E.IDPRODUTO,
+					P.NMPRODUTO,
+					P.DSCOR
+			</when>
+			<when test="agrupamento == 4">
+				GROUP BY
+					E.DTOCORRENCIA,
+					PTC.IDPRODUTOTIPOCLASSIFICACAO,
+					PTC.DSPRODUTOTIPOCLASSIFICACAO,
+					PTC.DSCOR
+			</when>
+			<when test="agrupamento == 0 and agrupamentoMensal == 1">
+				GROUP BY
+					E.DTOCORRENCIA
+			</when>
+		</choose>
+		)
+
+		<choose>
+			<when test="agrupamento == 0 and agrupamentoMensal == 0">
+				SELECT
+					SUM(NVL(E.VLBRUTO,0)) AS VLBRUTO,
+					NVL(AVG(E.MEDIAPARCELAS),0) AS MEDIAPARCELAS,
+					SUM(NVL(E.VLCOMISSAO,0)) AS VLCOMISSAO,
+					SUM(NVL(E.VLLIQUIDO,0)) AS VLLIQUIDO,
+					SUM(NVL(E.NRTRANSACOES,0)) AS NRTRANSACOES,
+					CASE WHEN SUM(NVL(E.VLBRUTO,0)) = 0 THEN 0 ELSE SUM(NVL(E.VLCOMISSAO,0)) / NULLIF(SUM(NVL(E.VLBRUTO,0)), 0) * 100 END AS TXDESCONTO
+				FROM E
+			</when>
+			<otherwise>
+				,C AS (
+					SELECT
+						IDCATEGORIA,
+						NMCATEGORIA,
+						DSCOR,
+						NRORDEM
+					FROM (
+						SELECT
+							ROW_NUMBER() OVER(ORDER BY SUM(E.VLBRUTO) DESC) AS NRORDEM,
+							E.IDCATEGORIA,
+							E.NMCATEGORIA,
+							E.DSCOR
+						FROM E
+						GROUP BY
+							E.IDCATEGORIA,
+							E.NMCATEGORIA,
+							E.DSCOR
+						)
+					WHERE NRORDEM &lt;= (CASE WHEN (SELECT COUNT(E.IDCATEGORIA) FROM E) = #{qtdeItensCategoria} THEN #{qtdeItensCategoria} + 1 ELSE #{qtdeItensCategoria} - 1 END)
+				),D (DTDATA) AS (
+				
+					SELECT #{dataInicial} AS DTDATA FROM DUAL 
+
+					UNION ALL 
+
+					SELECT PERIODO.DTDATA + 1 AS DTDATA FROM D PERIODO 
+
+					WHERE DTDATA &lt; #{dataInicial}
+
+				)
+				<if test = "agrupamentoMensal == 1">
+					,G AS (
+				</if>
+				SELECT
+					<choose>
+						<when test = "agrupamentoMensal == 1">
+							TO_CHAR(I.DTDATA, 'MON/YY') AS DTDATA,
+						</when>
+						<otherwise>
+							I.DTDATA,
+						</otherwise>
+					</choose>
+					C.IDCATEGORIA,
+					NVL(C.NMCATEGORIA,'Outros') AS NMCATEGORIA,
+					NVL(C.DSCOR,'#ACACAC') AS DSCOR,
+					C.NRORDEM,
+					SUM(NVL(I.VLBRUTO,0)) AS VLBRUTO,
+					NVL(AVG(I.MEDIAPARCELAS),0) AS MEDIAPARCELAS,
+					SUM(NVL(I.VLCOMISSAO,0)) AS VLCOMISSAO,
+					SUM(NVL(I.VLLIQUIDO,0)) AS VLLIQUIDO,
+					SUM(NVL(I.NRTRANSACOES,0)) AS NRTRANSACOES,
+					CASE WHEN SUM(NVL(I.VLBRUTO,0)) = 0 THEN 0 ELSE SUM(NVL(I.VLBRUTO,0)) / NULLIF(SUM(NVL(I.NRTRANSACOES,0)), 0) END AS TICKETMEDIO,
+					CASE WHEN SUM(NVL(I.VLBRUTO,0)) = 0 THEN 0 ELSE SUM(NVL(I.VLCOMISSAO,0)) / NULLIF(SUM(NVL(I.VLBRUTO,0)), 0) * 100 END AS TXDESCONTO
+				FROM (
+					SELECT
+						D.DTDATA,
+						E.IDCATEGORIA,
+						E.VLBRUTO,
+						E.MEDIAPARCELAS,
+						E.VLCOMISSAO,
+						E.VLLIQUIDO,
+						E.NRTRANSACOES,
+						E.TXDESCONTO,
+						E.TICKETMEDIO
+					FROM E PARTITION BY (E.IDCATEGORIA)
+						RIGHT OUTER JOIN D ON TRUNC(E.DTOCORRENCIA) = TRUNC(D.DTDATA)
+				) I
+					LEFT JOIN C ON C.IDCATEGORIA = I.IDCATEGORIA
+				GROUP BY
+					<choose>
+						<when test = "agrupamentoMensal == 1">
+							TO_CHAR(I.DTDATA, 'MON/YY'),
+						</when>
+						<otherwise>
+							I.DTDATA,
+						</otherwise>
+					</choose>
+					C.IDCATEGORIA,
+					C.NRORDEM,
+					NVL(C.NMCATEGORIA,'Outros'),
+					NVL(C.DSCOR,'#ACACAC')
+				ORDER BY
+					C.NRORDEM NULLS LAST
+				<if test = "agrupamentoMensal == 0">
+					, I.DTDATA
+				</if>
+
+				<if test = "agrupamentoMensal == 1">
+					)
+					SELECT
+						TO_DATE(G.DTDATA, 'MON/YY') AS DTDATA,
+						G.IDCATEGORIA,
+						G.NMCATEGORIA,
+						G.VLBRUTO,
+						G.DSCOR,
+						G.MEDIAPARCELAS,
+						G.VLCOMISSAO,
+						G.VLLIQUIDO,
+						G.NRTRANSACOES,
+						G.TXDESCONTO,
+						G.TICKETMEDIO
+					FROM G
+					ORDER BY
+						TO_DATE(G.DTDATA, 'MON/YY')
+				</if>
+			</otherwise>
+		</choose>
+	</select>
+
+
+<!-- 	<select id="pesquisarEstatistica" parameterType="Map">
+
+		WITH D (DATA) AS (
+			SELECT #{dataInicial} AS DATA FROM DUAL 
+
+			UNION ALL 
+
+			SELECT PERIODO.DATA + 1 AS DATA FROM D PERIODO 
+
+			WHERE DATA &lt; #{dataInicial}
+		)
+		SELECT *
+		FROM D
+	</select> -->
+
+
+</mapper>
